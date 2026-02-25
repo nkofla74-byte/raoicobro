@@ -1,30 +1,45 @@
 "use client";
 
 import React, { useState } from 'react';
-// IMPORTANTE: En Next.js usamos useRouter para navegar mediante código
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Lock, Mail, ArrowRight, ShieldCheck } from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient'; // AÑADIDO: Importación del cliente real
 
 export default function AdminLogin() {
   const [credenciales, setCredenciales] = useState({ correo: '', password: '' });
   const [cargando, setCargando] = useState(false);
-  const router = useRouter(); // Instanciamos el router de Next.js
+  const [errorAuth, setErrorAuth] = useState(null); // AÑADIDO: Estado para manejar errores reales
+  const router = useRouter(); 
 
   const handleChange = (e) => {
     setCredenciales({ ...credenciales, [e.target.name]: e.target.value });
   };
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setCargando(true);
+    setErrorAuth(null);
     
-    // Simulación de conexión segura. 
-    // Aquí luego pondremos el código de Supabase Auth
-    setTimeout(() => {
+    try {
+      // MEJORA: Autenticación real contra Supabase Auth
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: credenciales.correo,
+        password: credenciales.password,
+      });
+
+      if (error) throw error;
+
+      if (data.session) {
+        // Redirección al panel manteniendo tu lógica original
+        router.push('/admin-rapicobro'); 
+      }
+    } catch (error) {
+      console.error("Error de autenticación:", error.message);
+      setErrorAuth("Credenciales inválidas o acceso denegado."); // Mostrar error al usuario
+    } finally {
       setCargando(false);
-      router.push('/admin-rapicobro'); // Redirección al panel con Next.js
-    }, 1500);
+    }
   };
 
   return (
@@ -80,6 +95,13 @@ export default function AdminLogin() {
               placeholder="••••••••"
             />
           </div>
+
+          {/* AÑADIDO: Renderizado condicional del error de autenticación */}
+          {errorAuth && (
+            <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg border border-red-100 text-center font-medium">
+              {errorAuth}
+            </div>
+          )}
 
           <button 
             type="submit" 

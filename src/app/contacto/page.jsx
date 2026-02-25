@@ -3,16 +3,19 @@
 import React, { useState, useRef } from 'react';
 import { sileo } from 'sileo';
 import { Mail, Phone, MapPin, Send, Lock, CheckCircle2, Building2, UploadCloud, File, X } from 'lucide-react';
-// IMPORTANTE: Ajustamos la ruta para que encuentre tu archivo supabaseClient.js que está en src/
 import { supabase } from '../../lib/supabaseClient';
+
 export default function Contacto() {
   const [enviado, setEnviado] = useState(false);
   const [enviando, setEnviando] = useState(false);
-  const [archivo, setArchivo] = useState(null); // Estado para el archivo adjunto
+  const [archivo, setArchivo] = useState(null); 
   const [datos, setDatos] = useState({
     nombre: '',
+    identificacion: '', // NUEVO
     telefono: '',
     correo: '',
+    ciudad: '', // NUEVO
+    entidad: '', // NUEVO
     tipoConsulta: '',
     mensaje: '',
     aceptaDatos: false
@@ -25,11 +28,9 @@ export default function Contacto() {
     setDatos({ ...datos, [e.target.name]: value });
   };
 
-  // Función para manejar la selección del archivo
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      // Validamos el tamaño (máximo 5MB)
       if (file.size > 5 * 1024 * 1024) {
         sileo.error('El archivo es muy pesado. Máximo 5MB.');
         return;
@@ -38,7 +39,6 @@ export default function Contacto() {
     }
   };
 
-  // Función para quitar el archivo seleccionado
   const removerArchivo = () => {
     setArchivo(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -65,13 +65,30 @@ export default function Contacto() {
 
           if (clienteExistente) {
             clienteId = clienteExistente.id;
+            
+            // Actualizamos el cliente con la nueva información de contexto
+            const { error: errorActualizar } = await supabase
+              .from('clientes')
+              .update({
+                nombre_completo: datos.nombre,
+                identificacion: datos.identificacion, // NUEVO
+                telefono: datos.telefono,
+                ciudad: datos.ciudad, // NUEVO
+                tipo_cliente: datos.tipoConsulta === 'Independiente' || datos.tipoConsulta === 'Empresas' || datos.tipoConsulta === 'Asesoria Juridica' || datos.tipoConsulta === 'Otro' ? datos.tipoConsulta : 'Otro'
+              })
+              .eq('id', clienteId);
+              
+            if (errorActualizar) console.error("Error actualizando cliente:", errorActualizar);
+
           } else {
             const { data: nuevoCliente, error: errorCrearCliente } = await supabase
               .from('clientes')
               .insert([{
                 nombre_completo: datos.nombre,
+                identificacion: datos.identificacion, // NUEVO
                 telefono: datos.telefono,
                 correo: datos.correo,
+                ciudad: datos.ciudad, // NUEVO
                 tipo_cliente: datos.tipoConsulta === 'Independiente' || datos.tipoConsulta === 'Empresas' || datos.tipoConsulta === 'Asesoria Juridica' || datos.tipoConsulta === 'Otro' ? datos.tipoConsulta : 'Otro',
                 acepta_tratamiento_datos: datos.aceptaDatos
               }])
@@ -91,6 +108,7 @@ export default function Contacto() {
               cliente_id: clienteId,
               numero_radicado: radicadoUnico,
               tipo_servicio: 'Contacto Web - ' + datos.tipoConsulta,
+              entidad_salud: datos.entidad, // NUEVO: Guardamos la EPS/ARL
               descripcion: datos.mensaje,
               estado: 'Nuevo'
             }])
@@ -99,26 +117,18 @@ export default function Contacto() {
 
           if (errorCaso) throw errorCaso;
 
-          // 3. SUBIDA DEL ARCHIVO AL STORAGE (Si el usuario adjuntó uno)
+          // 3. SUBIDA DEL ARCHIVO AL STORAGE
           if (archivo) {
-            // Generamos un nombre único para el archivo (fecha + nombre original limpio)
             const fileExt = archivo.name.split('.').pop();
             const fileName = `${Date.now()}_${radicadoUnico}.${fileExt}`;
-            const filePath = `${clienteId}/${fileName}`; // Lo guardamos en una carpeta con el ID del cliente
+            const filePath = `${clienteId}/${fileName}`;
 
-            // Subimos al bucket 'documentos_clientes'
             const { error: errorStorage } = await supabase.storage
               .from('documentos_clientes')
               .upload(filePath, archivo);
 
             if (errorStorage) throw errorStorage;
 
-            // Obtenemos la URL pública (aunque el bucket sea privado, esta URL sirve para referenciarlo internamente)
-            const { data: publicUrlData } = supabase.storage
-              .from('documentos_clientes')
-              .getPublicUrl(filePath);
-
-            // Guardamos el registro en la tabla 'documentos'
             const { error: errorDocBD } = await supabase
               .from('documentos')
               .insert([{
@@ -144,7 +154,7 @@ export default function Contacto() {
     ).then(() => {
       setEnviando(false);
       setEnviado(true);
-      setDatos({ nombre: '', telefono: '', correo: '', tipoConsulta: '', mensaje: '', aceptaDatos: false });
+      setDatos({ nombre: '', identificacion: '', telefono: '', correo: '', ciudad: '', entidad: '', tipoConsulta: '', mensaje: '', aceptaDatos: false });
       setArchivo(null);
     }).catch(() => {
       setEnviando(false);
@@ -215,52 +225,78 @@ export default function Contacto() {
               <form onSubmit={handleSubmit} className="space-y-6">
                 <h3 className="text-2xl font-bold text-brand-blue mb-6">Envíanos un mensaje</h3>
                 
+                {/* FILA 1: Nombre e Identificación */}
                 <div className="grid md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold text-brand-gray">Nombre completo</label>
+                    <label className="text-sm font-semibold text-brand-gray">Nombre o Razón Social</label>
                     <input type="text" name="nombre" value={datos.nombre} onChange={handleChange} required 
                       className="w-full p-4 border border-gray-200 rounded-xl outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all bg-gray-50 hover:bg-white" 
-                      placeholder="Ej. Juan Pérez" />
+                      placeholder="Ej. Juan Pérez / Empresa SAS" />
                   </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-brand-gray">Cédula o NIT</label>
+                    <input type="text" name="identificacion" value={datos.identificacion} onChange={handleChange} required 
+                      className="w-full p-4 border border-gray-200 rounded-xl outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all bg-gray-50 hover:bg-white" 
+                      placeholder="Ej. 1000222333" />
+                  </div>
+                </div>
+
+                {/* FILA 2: Teléfono y Correo */}
+                <div className="grid md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-brand-gray">Número de celular</label>
                     <input type="tel" inputMode="numeric" name="telefono" value={datos.telefono} onChange={handleChange} required 
                       className="w-full p-4 border border-gray-200 rounded-xl outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all bg-gray-50 hover:bg-white" 
                       placeholder="Ej. 300 123 4567" />
                   </div>
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-brand-gray">Correo electrónico</label>
                     <input type="email" name="correo" value={datos.correo} onChange={handleChange} required 
                       className="w-full p-4 border border-gray-200 rounded-xl outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all bg-gray-50 hover:bg-white" 
                       placeholder="tucorreo@ejemplo.com" />
                   </div>
+                </div>
+
+                {/* FILA 3: Ciudad y Entidad */}
+                <div className="grid md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold text-brand-gray">Tipo de consulta</label>
-                    <select name="tipoConsulta" value={datos.tipoConsulta} onChange={handleChange} required
-                      className="w-full p-4 border border-gray-200 rounded-xl outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all bg-gray-50 hover:bg-white text-brand-gray cursor-pointer">
-                      <option value="">Selecciona una opción...</option>
-                      <option value="Independiente">Trabajador Independiente</option>
-                      <option value="Empresas">Información para Empresas</option>
-                      <option value="Asesoria Juridica">Asesoría Jurídica</option>
-                      <option value="Otro">Otro asunto</option>
-                    </select>
+                    <label className="text-sm font-semibold text-brand-gray">Ciudad</label>
+                    <input type="text" name="ciudad" value={datos.ciudad} onChange={handleChange} required 
+                      className="w-full p-4 border border-gray-200 rounded-xl outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all bg-gray-50 hover:bg-white" 
+                      placeholder="Ej. Bogotá" />
                   </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-brand-gray">Entidad (EPS/ARL/Fondo)</label>
+                    <input type="text" name="entidad" value={datos.entidad} onChange={handleChange} required 
+                      className="w-full p-4 border border-gray-200 rounded-xl outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all bg-gray-50 hover:bg-white" 
+                      placeholder="Ej. Nueva EPS, SURA, Porvenir" />
+                  </div>
+                </div>
+
+                {/* FILA 4: Tipo de consulta */}
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-brand-gray">Tipo de perfil / consulta</label>
+                  <select name="tipoConsulta" value={datos.tipoConsulta} onChange={handleChange} required
+                    className="w-full p-4 border border-gray-200 rounded-xl outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all bg-gray-50 hover:bg-white text-brand-gray cursor-pointer">
+                    <option value="">Selecciona una opción...</option>
+                    <option value="Independiente">Trabajador Independiente</option>
+                    <option value="Empresas">Información para Empresas</option>
+                    <option value="Asesoria Juridica">Asesoría Jurídica</option>
+                    <option value="Otro">Otro asunto</option>
+                  </select>
                 </div>
 
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-brand-gray">Mensaje o Detalles del Trámite</label>
                   <textarea name="mensaje" value={datos.mensaje} onChange={handleChange} required rows="3"
                     className="w-full p-4 border border-gray-200 rounded-xl outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all bg-gray-50 hover:bg-white resize-none" 
-                    placeholder="Escribe aquí los detalles de tu incapacidad o consulta..."></textarea>
+                    placeholder="Describe detalladamente el problema con tu incapacidad o requerimiento jurídico..."></textarea>
                 </div>
 
                 {/* --- ÁREA DE CARGA DE ARCHIVOS --- */}
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-brand-gray">Adjuntar Documento (Opcional)</label>
-                  <p className="text-xs text-gray-500 mb-2">Sube tu historia clínica o incapacidad (PDF, JPG, PNG. Máx 5MB).</p>
+                  <p className="text-xs text-gray-500 mb-2">Sube tu historia clínica, rechazo de EPS o incapacidad (PDF, JPG, PNG. Máx 5MB).</p>
                   
                   {!archivo ? (
                     <div 

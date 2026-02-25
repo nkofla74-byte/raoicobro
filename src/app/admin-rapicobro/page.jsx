@@ -1,30 +1,27 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation'; 
 import { 
   LayoutDashboard, Users, FileText, CheckSquare, Clock, 
-  Search, Building2, User, ShieldAlert, FileDigit, RefreshCw, AlertCircle
+  Search, Building2, User, ShieldAlert, FileDigit, RefreshCw, AlertCircle, MapPin, Hash
 } from 'lucide-react';
-// IMPORTANTE: Actualizamos la ruta para que apunte a la carpeta lib/
 import { supabase } from '@/lib/supabaseClient'; 
 
 export default function AdminDashboard() {
+  const router = useRouter(); 
   const [vistaActiva, setVistaActiva] = useState('tablero');
   const [filtroEstado, setFiltroEstado] = useState('Todos');
   const [cargando, setCargando] = useState(true);
 
-  // Estados reales de la base de datos
   const [solicitudes, setSolicitudes] = useState([]);
   const [documentos, setDocumentos] = useState([]);
   const [clientesUnicos, setClientesUnicos] = useState([]);
 
-  // Función maestra para traer los datos de Supabase
   const cargarDatos = async () => {
-    // Solo mostramos el cargando la primera vez para no interrumpir el flujo del tiempo real
     if (solicitudes.length === 0) setCargando(true);
     
     try {
-      // 1. Traer los Casos y unir (Join) con la tabla Clientes
       const { data: dataCasos, error: errorCasos } = await supabase
         .from('casos')
         .select(`
@@ -32,34 +29,39 @@ export default function AdminDashboard() {
           numero_radicado,
           fecha_creacion,
           tipo_servicio,
+          entidad_salud,
+          descripcion,
           estado,
-          clientes ( nombre_completo, tipo_cliente, telefono, correo )
+          monto_recuperar,
+          clientes ( nombre_completo, tipo_cliente, telefono, correo, identificacion, ciudad )
         `)
         .order('fecha_creacion', { ascending: false });
 
       if (errorCasos) throw errorCasos;
 
-      // Formateamos los datos para nuestra tabla con manejo defensivo de objetos
       const casosFormateados = dataCasos.map(c => {
-        // Manejamos si clientes es un objeto o un array de un elemento
         const clienteData = Array.isArray(c.clientes) ? c.clientes[0] : c.clientes;
         
         return {
           id: c.id, 
           radicado: c.numero_radicado,
-          fecha: new Date(c.fecha_creacion).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }),
+          fecha: new Date(c.fecha_creacion).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute:'2-digit' }),
           cliente: clienteData?.nombre_completo || 'Sin nombre',
+          correo: clienteData?.correo || 'Sin correo',
+          telefono: clienteData?.telefono || 'Sin teléfono',
+          identificacion: clienteData?.identificacion || 'Sin documento',
+          ciudad: clienteData?.ciudad || 'Sin ciudad',
           tipoCliente: clienteData?.tipo_cliente || 'Otro',
           servicio: c.tipo_servicio,
+          entidad: c.entidad_salud || 'No especificada',
+          descripcion: c.descripcion || 'Sin descripción',
           estado: c.estado,
-          telefono: clienteData?.telefono || 'Sin teléfono',
-          correo: clienteData?.correo || ''
+          monto: c.monto_recuperar
         };
       });
 
       setSolicitudes(casosFormateados);
 
-      // Extraemos clientes únicos de manera más precisa usando el correo
       const correosVistos = new Set();
       const clientesMapeados = [];
       
@@ -71,7 +73,6 @@ export default function AdminDashboard() {
       });
       setClientesUnicos(clientesMapeados);
 
-      // 2. Traer los Documentos
       const { data: dataDocs, error: errorDocs } = await supabase
         .from('documentos')
         .select(`
@@ -106,36 +107,33 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- NUEVA FUNCIÓN DE TIEMPO REAL ---
   useEffect(() => {
-    cargarDatos();
+    const verificarSesion = async () => {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error || !session) {
+        router.push('/login'); 
+        return;
+      }
+      cargarDatos();
 
-    // Creamos una suscripción a la tabla 'casos'
-    const canal = supabase
-      .channel('cambios-reales')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'casos' }, 
-        () => {
-          cargarDatos(); // Recarga los datos automáticamente
-        }
-      )
-      .subscribe();
+      const canal = supabase
+        .channel('cambios-reales')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'casos' }, () => { cargarDatos(); })
+        .subscribe();
 
-    // Limpieza al desmontar el componente
-    return () => {
-      supabase.removeChannel(canal);
+      return () => { supabase.removeChannel(canal); };
     };
-  }, []);
 
-  // Función para modificar el estado y guardarlo en Supabase
+    verificarSesion();
+  }, [router]);
+
   const cambiarEstado = async (id_real, nuevoEstado) => {
-    // Actualización visual instantánea
     setSolicitudes(solicitudes.map(s => s.id === id_real ? { ...s, estado: nuevoEstado } : s));
 
     try {
       const { error } = await supabase
         .from('casos')
-        .update({ estado: nuevoEstado })
+        .update({ estado: nuevoEstado, fecha_actualizacion: new Date().toISOString() })
         .eq('id', id_real);
 
       if (error) {
@@ -147,30 +145,36 @@ export default function AdminDashboard() {
     }
   };
 
-  // Función integrada para abrir archivos seguros
+  // SOLUCIÓN A LA APERTURA DE ARCHIVOS: Usando el método Blob nativo (Download)
   const abrirArchivoSeguro = async (ruta) => {
     try {
+      // Descargamos el blob con los permisos de la sesión actual
       const { data, error } = await supabase.storage
         .from('documentos_clientes')
-        .createSignedUrl(ruta, 60); // Crea un link que dura 60 segundos
+        .download(ruta);
 
       if (error) throw error;
-      window.open(data.signedUrl, '_blank'); // Abre el PDF en una pestaña nueva
+
+      // Creamos una URL temporal en memoria para el navegador
+      const url = URL.createObjectURL(data);
+      window.open(url, '_blank'); 
+
+      // Limpiamos la memoria después de unos segundos
+      setTimeout(() => URL.revokeObjectURL(url), 15000);
+
     } catch (error) {
       console.error("Error al generar enlace seguro:", error);
-      if (typeof sileo !== 'undefined') {
-        sileo.error("No se pudo abrir el archivo. Verifica los permisos.");
-      } else {
-        alert("No se pudo abrir el archivo. Verifica los permisos.");
-      }
+      alert(`No se pudo abrir el archivo. Detalles del error: ${error.message || 'Sin permisos de lectura'}. Verifica que en Supabase Storage las políticas (RLS) permitan SELECT al rol autenticado.`);
     }
   };
 
   const estilosEstado = {
     'Nuevo': 'bg-blue-100 text-blue-800 border-blue-200 focus:ring-blue-500',
+    'Revisando Documentos': 'bg-orange-100 text-orange-800 border-orange-200 focus:ring-orange-500',
     'En Gestión': 'bg-yellow-100 text-yellow-800 border-yellow-200 focus:ring-yellow-500',
     'Esperando Pago': 'bg-purple-100 text-purple-800 border-purple-200 focus:ring-purple-500',
     'Finalizado': 'bg-green-100 text-green-800 border-green-200 focus:ring-green-500',
+    'Rechazado': 'bg-red-100 text-red-800 border-red-200 focus:ring-red-500',
   };
 
   const iconosCliente = {
@@ -184,10 +188,9 @@ export default function AdminDashboard() {
     ? solicitudes 
     : solicitudes.filter(s => s.estado === filtroEstado);
 
-  // Cálculo de métricas
   const totalNuevas = solicitudes.filter(s => s.estado === 'Nuevo').length;
+  const totalRevisando = solicitudes.filter(s => s.estado === 'Revisando Documentos').length;
   const totalGestion = solicitudes.filter(s => s.estado === 'En Gestión').length;
-  const totalEspera = solicitudes.filter(s => s.estado === 'Esperando Pago').length;
   const totalFin = solicitudes.filter(s => s.estado === 'Finalizado').length;
 
   return (
@@ -222,27 +225,14 @@ export default function AdminDashboard() {
         <header className="bg-white border-b border-gray-200 p-6 flex justify-between items-center z-10">
           <div className="flex items-center gap-4">
             <h1 className="text-2xl font-black text-brand-blue capitalize">{vistaActiva.replace('-', ' ')}</h1>
-            <button 
-              onClick={cargarDatos} 
-              className="flex items-center gap-2 text-sm text-brand-gray hover:text-brand-gold transition-colors bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200"
-              title="Refrescar datos"
-            >
+            <button onClick={cargarDatos} className="flex items-center gap-2 text-sm text-brand-gray hover:text-brand-gold transition-colors bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200" title="Refrescar datos">
               <RefreshCw size={16} className={cargando ? "animate-spin" : ""} />
               <span className="hidden sm:inline">Actualizar</span>
             </button>
           </div>
-          
-          <div className="flex items-center gap-4">
-            <div className="relative hidden sm:block">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-              <input type="text" placeholder="Buscar radicado..." className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold w-64 bg-gray-50 hover:bg-white transition-colors" />
-            </div>
-            <div className="w-10 h-10 rounded-full bg-brand-gold text-brand-blue flex items-center justify-center font-bold shadow-md">A</div>
-          </div>
         </header>
 
         <div className="flex-1 overflow-auto p-6 md:p-8">
-          
           {cargando ? (
             <div className="h-full flex flex-col items-center justify-center text-brand-blue">
               <RefreshCw size={40} className="animate-spin mb-4 text-brand-gold" />
@@ -250,7 +240,6 @@ export default function AdminDashboard() {
             </div>
           ) : (
             <>
-              {/* VISTA 1: TABLERO PRINCIPAL */}
               {vistaActiva === 'tablero' && (
                 <div className="animate-fade-in">
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -264,18 +253,18 @@ export default function AdminDashboard() {
                     
                     <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-brand-gray font-medium mb-1">En Gestión (EPS)</p>
-                        <h3 className="text-3xl font-black text-brand-gold">{totalGestion}</h3>
+                        <p className="text-sm text-brand-gray font-medium mb-1">Revisando Docs</p>
+                        <h3 className="text-3xl font-black text-orange-500">{totalRevisando}</h3>
                       </div>
-                      <div className="w-12 h-12 bg-yellow-50 text-brand-gold-dark rounded-full flex items-center justify-center"><FileText size={24} /></div>
+                      <div className="w-12 h-12 bg-orange-50 text-orange-500 rounded-full flex items-center justify-center"><FileText size={24} /></div>
                     </div>
 
                     <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-brand-gray font-medium mb-1">Esperando Pago</p>
-                        <h3 className="text-3xl font-black text-purple-600">{totalEspera}</h3>
+                        <p className="text-sm text-brand-gray font-medium mb-1">En Gestión (EPS)</p>
+                        <h3 className="text-3xl font-black text-brand-gold">{totalGestion}</h3>
                       </div>
-                      <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center"><Clock size={24} /></div>
+                      <div className="w-12 h-12 bg-yellow-50 text-brand-gold-dark rounded-full flex items-center justify-center"><LayoutDashboard size={24} /></div>
                     </div>
 
                     <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
@@ -291,7 +280,7 @@ export default function AdminDashboard() {
                     <div className="p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4">
                       <h3 className="text-lg font-bold text-brand-blue">Control de Procesos</h3>
                       <div className="flex flex-wrap gap-2 bg-gray-50 p-1 rounded-lg border border-gray-200">
-                        {['Todos', 'Nuevo', 'En Gestión', 'Esperando Pago', 'Finalizado'].map(estado => (
+                        {['Todos', 'Nuevo', 'Revisando Documentos', 'En Gestión', 'Esperando Pago', 'Finalizado', 'Rechazado'].map(estado => (
                           <button 
                             key={estado}
                             onClick={() => setFiltroEstado(estado)}
@@ -307,44 +296,68 @@ export default function AdminDashboard() {
                       <table className="w-full text-left border-collapse">
                         <thead>
                           <tr className="bg-gray-50 text-brand-gray text-sm uppercase tracking-wider">
-                            <th className="p-4 font-semibold">Radicado / Fecha</th>
-                            <th className="p-4 font-semibold">Cliente</th>
-                            <th className="p-4 font-semibold">Servicio</th>
-                            <th className="p-4 font-semibold">Estado (BD)</th>
+                            <th className="p-4 font-semibold w-1/6">Radicado / Fecha</th>
+                            <th className="p-4 font-semibold w-1/4">Datos del Cliente</th>
+                            <th className="p-4 font-semibold w-2/5">Servicio y Contexto Completo</th>
+                            <th className="p-4 font-semibold w-1/6 text-center">Gestión</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                           {solicitudesFiltradas.length === 0 ? (
-                            <tr>
-                              <td colSpan="4" className="p-8 text-center text-gray-400">
-                                <AlertCircle className="mx-auto mb-2 opacity-50" size={32} />
-                                No hay casos registrados en este estado.
-                              </td>
-                            </tr>
+                            <tr><td colSpan="4" className="p-8 text-center text-gray-400">No hay casos registrados en este estado.</td></tr>
                           ) : (
                             solicitudesFiltradas.map((sol) => (
                               <tr key={sol.id} className="hover:bg-gray-50 transition-colors">
-                                <td className="p-4">
-                                  <div className="font-bold text-brand-blue">{sol.radicado}</div>
-                                  <div className="text-xs text-gray-400">{sol.fecha}</div>
+                                <td className="p-4 align-top">
+                                  <div className="font-bold text-brand-blue text-base">{sol.radicado}</div>
+                                  <div className="text-xs text-gray-500 mt-1">{sol.fecha}</div>
                                 </td>
-                                <td className="p-4">
-                                  <div className="font-bold text-gray-800">{sol.cliente}</div>
-                                  <div className="flex items-center gap-1 mt-1 text-xs text-gray-500">
-                                    {iconosCliente[sol.tipoCliente] || <User size={16}/>} {sol.tipoCliente}
+                                <td className="p-4 align-top">
+                                  <div className="font-bold text-gray-800 text-base">{sol.cliente}</div>
+                                  
+                                  <div className="mt-2 space-y-1">
+                                    <div className="flex items-center gap-1 text-sm text-gray-700">
+                                      <Hash size={14} className="text-brand-gold" /> C.C/NIT: <b>{sol.identificacion}</b>
+                                    </div>
+                                    <div className="flex items-center gap-1 text-sm text-gray-700">
+                                      <MapPin size={14} className="text-brand-gold" /> <b>{sol.ciudad}</b>
+                                    </div>
+                                    <div className="text-xs text-gray-500 pt-1">{sol.correo}</div>
+                                    <div className="text-xs text-gray-500">{sol.telefono}</div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 mt-3 text-xs text-brand-gold font-medium bg-brand-gold/10 inline-block px-2 py-1 rounded">
+                                    {sol.tipoCliente}
                                   </div>
                                 </td>
-                                <td className="p-4 text-sm text-gray-600">{sol.servicio}</td>
-                                <td className="p-4">
+                                <td className="p-4 align-top">
+                                  <div className="flex flex-col gap-2">
+                                    <div className="text-sm font-bold text-brand-blue uppercase">{sol.servicio}</div>
+                                    <div className="text-xs font-semibold text-gray-700 flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-lg w-max border border-gray-200">
+                                      <Building2 size={14} className="text-brand-gold" /> Entidad: {sol.entidad}
+                                    </div>
+                                    
+                                    {/* SOLUCIÓN VISUAL: Caja de mensaje con wrap total para leer todo el contexto sin recortes */}
+                                    <div className="mt-2 bg-white border border-brand-gold/30 p-4 rounded-xl shadow-sm">
+                                      <p className="text-xs font-bold text-brand-gold mb-1">Mensaje del cliente:</p>
+                                      <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                                        {sol.descripcion}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="p-4 align-top text-center">
                                   <select
                                     value={sol.estado}
                                     onChange={(e) => cambiarEstado(sol.id, e.target.value)}
-                                    className={`px-3 py-1.5 text-xs font-bold rounded-full border outline-none cursor-pointer appearance-none text-center shadow-sm transition-colors ${estilosEstado[sol.estado] || estilosEstado['Nuevo']}`}
+                                    className={`px-3 py-2 text-sm font-bold rounded-xl border outline-none cursor-pointer appearance-none text-center shadow-sm transition-colors w-full mb-2 ${estilosEstado[sol.estado] || estilosEstado['Nuevo']}`}
                                   >
                                     <option value="Nuevo">Nuevo</option>
+                                    <option value="Revisando Documentos">Revisando Documentos</option>
                                     <option value="En Gestión">En Gestión</option>
                                     <option value="Esperando Pago">Esperando Pago</option>
                                     <option value="Finalizado">Finalizado</option>
+                                    <option value="Rechazado">Rechazado</option>
                                   </select>
                                 </td>
                               </tr>
@@ -357,7 +370,6 @@ export default function AdminDashboard() {
                 </div>
               )}
 
-              {/* VISTA 2: CLIENTES */}
               {vistaActiva === 'clientes' && (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-fade-in">
                   <div className="p-6 border-b border-gray-100">
@@ -367,14 +379,15 @@ export default function AdminDashboard() {
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="bg-gray-50 text-brand-gray text-sm uppercase tracking-wider">
-                          <th className="p-4 font-semibold">Nombre / Razón Social</th>
-                          <th className="p-4 font-semibold">Tipo</th>
-                          <th className="p-4 font-semibold">Teléfono de Contacto</th>
+                          <th className="p-4 font-semibold">Cliente / Razón Social</th>
+                          <th className="p-4 font-semibold">Identificación y Ubicación</th>
+                          <th className="p-4 font-semibold">Contacto</th>
+                          <th className="p-4 font-semibold">Tipo de Perfil</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {clientesUnicos.length === 0 ? (
-                          <tr><td colSpan="3" className="p-8 text-center text-gray-400">No hay clientes registrados aún.</td></tr>
+                          <tr><td colSpan="4" className="p-8 text-center text-gray-400">No hay clientes registrados aún.</td></tr>
                         ) : (
                           clientesUnicos.map((cli, idx) => (
                             <tr key={idx} className="hover:bg-gray-50 transition-colors">
@@ -382,8 +395,15 @@ export default function AdminDashboard() {
                                 <div className="w-8 h-8 rounded-full bg-brand-bg flex items-center justify-center text-brand-gold">{cli.cliente.charAt(0)}</div>
                                 {cli.cliente}
                               </td>
+                              <td className="p-4">
+                                <div className="text-sm font-medium text-gray-800 flex items-center gap-1"><Hash size={14} className="text-gray-400" /> {cli.identificacion}</div>
+                                <div className="text-xs text-gray-500 mt-1 flex items-center gap-1"><MapPin size={14} className="text-gray-400" /> {cli.ciudad}</div>
+                              </td>
+                              <td className="p-4">
+                                <div className="text-sm font-medium text-gray-800">{cli.telefono}</div>
+                                <div className="text-xs text-gray-500">{cli.correo}</div>
+                              </td>
                               <td className="p-4 text-sm text-gray-600">{cli.tipoCliente}</td>
-                              <td className="p-4 text-sm font-medium text-gray-600">{cli.telefono}</td>
                             </tr>
                           ))
                         )}
@@ -393,7 +413,6 @@ export default function AdminDashboard() {
                 </div>
               )}
 
-              {/* VISTA 3: DOCUMENTOS */}
               {vistaActiva === 'documentos' && (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-fade-in">
                   <div className="p-6 border-b border-gray-100 flex justify-between items-center">
@@ -425,7 +444,6 @@ export default function AdminDashboard() {
               )}
             </>
           )}
-
         </div>
       </main>
     </div>
