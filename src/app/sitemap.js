@@ -1,6 +1,6 @@
 export default function sitemap() {
   // Cuando compres tu dominio, cambiarás esta URL
-  const baseUrl = 'https://www.rapicobro.com';
+  const baseUrl = 'https://www.rapicobro.com.co';
 
   return [
     { url: `${baseUrl}/`, lastModified: new Date(), changeFrequency: 'yearly', priority: 1 },
