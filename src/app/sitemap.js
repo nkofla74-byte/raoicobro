@@ -1,6 +1,6 @@
 export default function sitemap() {
-  // DEBE ser rapicobroincapacidades.com.co
-  const baseUrl = 'https://rapicobroincapacidades.com.co';
+  // Agregamos el 'www' para que coincida con la redirección de Vercel
+  const baseUrl = 'https://www.rapicobroincapacidades.com.co';
 
   return [
     { url: `${baseUrl}/`, lastModified: new Date(), priority: 1 },
