@@ -1,10 +1,5 @@
-import { MetadataRoute } from 'next';
-
-export default function sitemap(): MetadataRoute.Sitemap {
+export default function sitemap() {
   const baseUrl = 'https://www.rapicobroincapacidades.com.co';
-  
-  // Usar una fecha dinámica asegura que Google vea el sitio como "fresco" 
-  // cada vez que haces un nuevo despliegue en Vercel.
   const lastModified = new Date();
 
   return [

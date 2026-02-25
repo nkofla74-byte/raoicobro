@@ -3,8 +3,8 @@ export default function robots() {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/admin-rapicobro/', '/login/'], // Evita que Google indexe tu panel privado
+      disallow: ['/admin-rapicobro/', '/login/'], 
     },
-    sitemap: 'https://www.rapicobro.com/sitemap.xml', // Cambia esto por tu dominio futuro
+    sitemap: 'https://www.rapicobroincapacidades.com.co/sitemap.xml', 
   }
 }
