@@ -1,8 +1,6 @@
-import type { MetadataRoute } from 'next'
-
 const BASE_URL = 'https://www.rapicobroincapacidades.com.co'
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default function sitemap() {
   const now = new Date()
 
   const routes = [
