@@ -1,19 +1,30 @@
 "use client";
 
 import React, { useState, useRef } from 'react';
-import { FileSignature, Printer, PenTool, Eraser, CheckCircle2 } from 'lucide-react';
+import { FileSignature, Printer, PenTool, Eraser, CheckCircle2, RotateCcw } from 'lucide-react';
 import SignatureCanvas from 'react-signature-canvas';
 
 export default function AutorizacionDatos() {
   const sigCanvas = useRef({});
   const [firmaGuardada, setFirmaGuardada] = useState(null);
   const [mostrarPad, setMostrarPad] = useState(false);
+  
+  // Estado para los datos del formulario basado en el PDF
+  const [formData, setFormData] = useState({
+    nombre: '',
+    cedula: '',
+    fecha: new Date().toISOString().split('T')[0]
+  });
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
 
   const limpiarFirma = () => sigCanvas.current.clear();
 
   const guardarFirma = () => {
     if (sigCanvas.current.isEmpty()) {
-      alert('Por favor, dibuja tu firma antes de guardar.');
+      alert('Por favor, dibuja tu firma antes de aplicar.');
       return;
     }
     const dataURL = sigCanvas.current.getTrimmedCanvas().toDataURL('image/png');
@@ -27,92 +38,146 @@ export default function AutorizacionDatos() {
   };
 
   return (
-    <div className="bg-brand-bg min-h-screen py-12 animate-fade-in print:bg-white print:py-0">
+    <div className="bg-slate-50 min-h-screen py-12 animate-in fade-in duration-500 print:bg-white print:py-0 font-sans">
       <div className="container mx-auto px-4 max-w-4xl print:max-w-full print:px-0">
         
+        {/* Acciones de Cabecera */}
         <div className="flex flex-col sm:flex-row justify-between items-center mb-6 print:hidden gap-4">
-          <h1 className="text-2xl font-bold text-brand-blue flex items-center gap-2">
-            <FileSignature size={28} className="text-brand-light" />
-            Documento Legal
+          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <FileSignature size={28} className="text-blue-600" />
+            Documento de Autorización
           </h1>
-          <button onClick={() => window.print()} className="bg-brand-blue text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-900 transition-colors flex items-center gap-2 shadow-lg w-full sm:w-auto justify-center">
+          <button 
+            onClick={() => window.print()} 
+            className="bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-all flex items-center gap-2 shadow-lg w-full sm:w-auto justify-center"
+          >
             <Printer size={20} /> Guardar como PDF / Imprimir
           </button>
         </div>
 
-        <div className="bg-white p-10 md:p-16 rounded-xl shadow-md border border-gray-200 text-gray-800 text-justify leading-relaxed mx-auto print:shadow-none print:border-none print:p-8">
-          <h2 className="text-xl font-bold text-center mb-8 uppercase tracking-wide">
-            1. Formato de Autorización para el Tratamiento de Datos Personales Sensibles
-          </h2>
+        {/* Cuerpo del Documento (RAPICOBRO) */}
+        <div className="bg-white p-10 md:p-16 rounded-xl shadow-xl border border-gray-100 text-gray-800 text-justify leading-relaxed mx-auto print:shadow-none print:border-none print:p-8">
+          
+          {/* Logo / Encabezado del PDF */}
+          <div className="flex flex-col items-center mb-8">
+            <h2 className="text-3xl font-black text-blue-900 tracking-tighter italic">RAPICOBRO</h2>
+            <p className="text-xs uppercase font-bold text-gray-500 tracking-widest -mt-1">Especialistas en cobro de incapacidades</p>
+          </div>
 
-          <p className="mb-6 leading-loose">
-            Yo, <input type="text" placeholder="Escribe tu nombre completo" className="border-b border-gray-400 focus:border-brand-blue focus:outline-none w-64 md:w-80 bg-transparent text-center font-semibold text-brand-blue print:text-black" />, identificado(a) con cédula de ciudadanía No. <input type="text" placeholder="Tu número de documento" className="border-b border-gray-400 focus:border-brand-blue focus:outline-none w-48 bg-transparent text-center font-semibold text-brand-blue print:text-black" />, actuando en nombre propio, autorizo de manera previa, expresa, libre e informada a <strong>RadicaSalud Legal S.A.S.</strong>, identificada con NIT <strong>901.234.567-8</strong>, con domicilio en <strong>Mosquera, Cundinamarca</strong>, en calidad de Responsable del Tratamiento, para recolectar, almacenar, usar, transmitir y suprimir mis datos personales, incluyendo datos sensibles relacionados con mi estado de salud.
+          <div className="text-center mb-10">
+            <h2 className="text-xl font-bold uppercase tracking-tight border-b-2 border-gray-800 inline-block pb-1">
+              1. Formato de Autorización para el Tratamiento de Datos
+            </h2>
+          </div>
+
+          <p className="mb-8 text-lg leading-loose">
+            Yo, 
+            <input 
+              type="text" 
+              name="nombre"
+              value={formData.nombre}
+              onChange={handleChange}
+              placeholder="Escribe tu nombre completo" 
+              className="mx-2 border-b border-gray-400 focus:border-blue-600 focus:outline-none w-64 md:w-80 bg-transparent text-center font-bold text-blue-800 print:text-black print:border-transparent" 
+            />, 
+            identificado(a) con cédula de ciudadanía No. 
+            <input 
+              type="text" 
+              name="cedula"
+              value={formData.cedula}
+              onChange={handleChange}
+              placeholder="Número de documento" 
+              className="mx-2 border-b border-gray-400 focus:border-blue-600 focus:outline-none w-48 bg-transparent text-center font-bold text-blue-800 print:text-black print:border-transparent" 
+            />, 
+            actuando en nombre propio, autorizo de manera previa, expresa, libre e informada a 
+            <strong> RAPICOBRO</strong>, identificada con NIT <strong>[Insertar NIT]</strong>, 
+            con domicilio en <strong>Bogotá Cundinamarca</strong>, en calidad de Responsable del Tratamiento, 
+            para recolectar, almacenar, usar, transmitir, incluyendo datos relacionados con mi estado de salud.
           </p>
 
           <h3 className="font-bold text-lg mt-8 mb-3">1. Finalidad del tratamiento</h3>
           <p className="mb-2">Autorizo el tratamiento de mis datos para:</p>
           <ul className="list-disc pl-8 mb-6 space-y-2">
-            <li>Gestionar la radicación de incapacidades médicas ante EPS, IPS, ARL o empleadores.</li>
-            <li>Realizar seguimiento del trámite y gestionar correcciones.</li>
-            <li>Contactarme para informar el estado del proceso.</li>
+            <li>Gestionar la radicación de incapacidades médicas ante EPS, ARL.</li>
+            <li>Realizar seguimiento del trámite y gestionar.</li>
+            <li>Contactar para informar el estado del proceso.</li>
             <li>Cumplir obligaciones legales y conservar información probatoria.</li>
           </ul>
 
           <h3 className="font-bold text-lg mt-8 mb-3">2. Datos sensibles y Derechos del titular</h3>
-          <p className="mb-4">Entiendo que los datos relativos a mi salud son considerados sensibles y no estoy obligado(a) a autorizarlos, pero reconozco que son necesarios para el servicio.</p>
-          <p className="mb-6">Declaro conocer que puedo conocer, actualizar, rectificar, suprimir mis datos o revocar esta autorización enviando un correo a <strong>legal@radicasalud.com.co</strong>.</p>
+          <p className="mb-4">Entiendo que los datos relativos a mi salud son considerados sensibles y no estoy obligado a autorizarlos, pero reconozco que son necesarios para el servicio.</p>
+          <p className="mb-6">Declaro conocer que puedo conocer, actualizar, rectificar, suprimir mis datos o revocar esta autorización enviando un correo a <strong>rapicobro1@gmail.com</strong>.</p>
 
           <h3 className="font-bold text-lg mt-8 mb-3">3. Vigencia</h3>
           <p className="mb-12">La autorización estará vigente mientras exista relación contractual o sea necesario legalmente.</p>
 
-          <div className="mt-16 pt-8 border-t border-gray-200">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+          {/* Sección de Firma */}
+          <div className="mt-20 pt-10 border-t border-gray-200">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-end">
               
-              <div>
-                <p className="font-bold text-gray-500 mb-2">Firma del Titular:</p>
+              <div className="relative">
+                <p className="font-bold text-gray-600 text-sm mb-4">Firma del Titular:</p>
                 
                 {firmaGuardada ? (
-                  <div className="relative group">
-                    <img src={firmaGuardada} alt="Firma digital" className="h-24 object-contain border-b border-gray-800 w-full mb-2" />
-                    <button onClick={rehacerFirma} className="absolute top-0 right-0 bg-red-100 text-red-600 p-1 rounded-md text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity print:hidden">
-                      X Borrar
+                  <div className="relative group border-b border-gray-900 pb-2">
+                    <img src={firmaGuardada} alt="Firma" className="h-24 mx-auto object-contain" />
+                    <button 
+                      onClick={rehacerFirma} 
+                      className="absolute -top-2 -right-2 bg-white text-red-500 p-1.5 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity print:hidden border border-red-100"
+                    >
+                      <RotateCcw size={14} />
                     </button>
                   </div>
                 ) : mostrarPad ? (
                   <div className="print:hidden">
-                    <div className="border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 mb-2 overflow-hidden">
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 mb-3 overflow-hidden">
                       <SignatureCanvas 
                         ref={sigCanvas} 
-                        penColor="#0A2540"
+                        penColor="#000"
                         canvasProps={{className: 'w-full h-32 cursor-crosshair'}} 
                       />
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={limpiarFirma} className="w-1/3 flex items-center justify-center gap-1 bg-gray-200 text-gray-700 py-2 rounded-md hover:bg-gray-300 text-sm font-semibold">
-                        <Eraser size={16} /> Limpiar
+                      <button onClick={limpiarFirma} className="flex-1 bg-gray-100 text-gray-600 py-2 rounded hover:bg-gray-200 text-xs font-bold uppercase">
+                        Limpiar
                       </button>
-                      <button onClick={guardarFirma} className="w-2/3 flex items-center justify-center gap-1 bg-brand-green text-white py-2 rounded-md hover:bg-green-700 text-sm font-bold shadow-sm">
-                        <CheckCircle2 size={16} /> Aplicar Firma
+                      <button onClick={guardarFirma} className="flex-[2] bg-blue-900 text-white py-2 rounded hover:bg-black text-xs font-bold uppercase shadow-sm">
+                        Aplicar Firma
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="border-b border-gray-800 h-24 mb-2 flex items-end pb-2">
-                    <button onClick={() => setMostrarPad(true)} className="flex items-center gap-2 text-brand-light font-bold hover:text-brand-blue transition-colors print:hidden">
-                      <PenTool size={18} /> Clic para firmar digitalmente
+                  <div className="border-b border-gray-800 h-24 mb-2 flex items-center justify-center print:hidden">
+                    <button 
+                      onClick={() => setMostrarPad(true)} 
+                      className="flex items-center gap-2 text-blue-700 font-bold border-2 border-blue-700 px-4 py-2 rounded hover:bg-blue-50 transition-colors"
+                    >
+                      <PenTool size={18} /> Firmar Digitalmente
                     </button>
                   </div>
                 )}
-                <p className="text-xs text-gray-400 mt-1">Firma Electrónica Simple (Ley 527 de 1999)</p>
+                <p className="text-[10px] text-gray-500 mt-2">Firma Electrónica Simple (Ley 527 de 1999)</p>
               </div>
 
-              <div className="flex flex-col justify-end">
-                <input type="date" className="border-b border-gray-800 focus:border-brand-blue focus:outline-none w-full bg-transparent text-gray-700 font-semibold mb-2 pb-1 print:text-black" />
-                <p className="font-bold text-gray-500">Fecha de aceptación</p>
+              <div className="flex flex-col">
+                <p className="font-bold text-gray-600 text-sm mb-4 text-right">Fecha de aceptación</p>
+                <input 
+                  type="date" 
+                  name="fecha"
+                  value={formData.fecha}
+                  onChange={handleChange}
+                  className="border-b border-gray-900 focus:outline-none w-full bg-transparent text-gray-800 font-bold text-center pb-2 print:border-transparent" 
+                />
               </div>
 
             </div>
           </div>
+          
+          {/* Marca de RAPICOBRO en pie de página */}
+          <div className="mt-12 text-center opacity-20 hidden print:block">
+            <p className="text-sm font-black italic">RAPICOBRO</p>
+          </div>
+
         </div>
       </div>
     </div>
